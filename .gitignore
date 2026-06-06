@@ -1,0 +1,15 @@
+third_party/
+GOAL.md
+.devcontainer/
+
+__pycache__/
+*.py[cod]
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+.venv/
+venv/
+
+.codex_mcp_state.json
