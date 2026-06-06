@@ -25,4 +25,6 @@ else
     nohup env CODEX_MCP_CWD="${WORKDIR}" "${CMD[@]}" >> "${LOG_FILE}" 2>&1 < /dev/null &
 fi
 
-echo $! > "${PID_FILE}"
+PID=$!
+echo "${PID}" > "${PID_FILE}"
+disown "${PID}"
