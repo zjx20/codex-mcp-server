@@ -68,7 +68,9 @@ class ToolServerTests(unittest.TestCase):
         self.assertEqual(init["result"]["serverInfo"]["name"], "codex-mcp-server")
         self.assertIn("prompts", init["result"]["capabilities"])
         tools = server.handle_message({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
-        names = {tool["name"] for tool in tools["result"]["tools"]}
+        tools_payload = tools["result"]["tools"]
+        self.assertTrue(tools_payload)
+        names = {tool["name"] for tool in tools_payload}
         self.assertEqual(
             names,
             {
@@ -83,6 +85,16 @@ class ToolServerTests(unittest.TestCase):
                 "tool_search",
                 "multi_tool_use.parallel",
             },
+        )
+        for tool in tools_payload:
+            self.assertIn("inputSchema", tool)
+            self.assertIn("outputSchema", tool)
+
+        by_name = {tool["name"]: tool for tool in tools_payload}
+        self.assertIn("oneOf", by_name["exec_command"]["outputSchema"])
+        self.assertEqual(
+            by_name["multi_tool_use.parallel"]["outputSchema"]["properties"]["results"]["type"],
+            "array",
         )
         server.tools.shutdown()
 

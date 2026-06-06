@@ -209,6 +209,191 @@ def array(items: JsonDict, description: str) -> JsonDict:
     return {"type": "array", "items": items, "description": description}
 
 
+def integer(description: str) -> JsonDict:
+    return {"type": "integer", "description": description}
+
+
+def nullable(item_schema: JsonDict) -> JsonDict:
+    return {"anyOf": [item_schema, {"type": "null"}]}
+
+
+def enum_string(values: list[str], description: str | None = None) -> JsonDict:
+    payload: JsonDict = {"type": "string", "enum": values}
+    if description is not None:
+        payload["description"] = description
+    return payload
+
+
+def shell_output_schema() -> JsonDict:
+    return {
+        "type": "object",
+        "properties": {
+            "wall_time_seconds": number("Elapsed wall-clock time spent waiting for output."),
+            "output": string("Combined stdout/stderr text, possibly truncated."),
+            "original_token_count": integer("Approximate token count before truncation."),
+            "session_id": integer("Present when the command is still running."),
+            "exit_code": integer("Present when the command has exited."),
+        },
+        "required": ["wall_time_seconds", "output", "original_token_count"],
+        "additionalProperties": False,
+        "oneOf": [
+            {"required": ["session_id"]},
+            {"required": ["exit_code"]},
+        ],
+    }
+
+
+def plan_item_schema() -> JsonDict:
+    return schema(
+        {
+            "step": string("Task step text."),
+            "status": enum_string(["pending", "in_progress", "completed"], "Plan item status."),
+        },
+        ["step", "status"],
+    )
+
+
+def patch_output_schema() -> JsonDict:
+    return schema(
+        {
+            "added": array(string("Added file path."), "Added files."),
+            "modified": array(string("Modified file path."), "Modified files."),
+            "deleted": array(string("Deleted file path."), "Deleted files."),
+            "summary": string("Human-readable patch summary."),
+        },
+        ["added", "modified", "deleted", "summary"],
+    )
+
+
+def update_plan_output_schema() -> JsonDict:
+    return schema(
+        {
+            "status": enum_string(["ok"], "Plan update result."),
+            "plan": array(plan_item_schema(), "Persisted plan items."),
+            "explanation": nullable(string("Optional explanation for this plan update.")),
+            "updated_at": number("Unix timestamp when the plan was updated."),
+        },
+        ["status", "plan", "explanation", "updated_at"],
+    )
+
+
+def goal_active_output_schema() -> JsonDict:
+    return schema(
+        {
+            "status": enum_string(["active", "complete", "blocked"], "Goal status."),
+            "objective": string("Goal objective."),
+            "token_budget": nullable(integer("Optional token budget.")),
+            "tokens_used": integer("Tracked token usage."),
+            "created_at": number("Unix timestamp when the goal was created."),
+            "updated_at": number("Unix timestamp when the goal was last updated."),
+            "finished_at": number("Unix timestamp when the goal finished."),
+            "elapsed_seconds": number("Elapsed time since the goal was created."),
+            "tokens_remaining": nullable(integer("Remaining token budget when known.")),
+        },
+        [
+            "status",
+            "objective",
+            "token_budget",
+            "tokens_used",
+            "created_at",
+            "updated_at",
+            "elapsed_seconds",
+            "tokens_remaining",
+        ],
+    )
+
+
+def goal_none_output_schema() -> JsonDict:
+    return schema(
+        {
+            "status": enum_string(["none"], "No active goal exists."),
+            "goal": {"type": "null", "description": "No goal payload."},
+        },
+        ["status", "goal"],
+    )
+
+
+def goal_output_schema() -> JsonDict:
+    return {"oneOf": [goal_none_output_schema(), goal_active_output_schema()]}
+
+
+def tool_definition_schema() -> JsonDict:
+    return {
+        "type": "object",
+        "properties": {
+            "name": string("Tool name."),
+            "description": string("Tool description."),
+            "inputSchema": {"type": "object", "description": "Tool input JSON Schema."},
+            "outputSchema": {"type": "object", "description": "Tool output JSON Schema."},
+        },
+        "required": ["name", "description", "inputSchema", "outputSchema"],
+        "additionalProperties": True,
+    }
+
+
+def tool_search_output_schema() -> JsonDict:
+    return schema(
+        {
+            "tools": array(tool_definition_schema(), "Matching tool definitions."),
+        },
+        ["tools"],
+    )
+
+
+def content_text_item_schema() -> JsonDict:
+    return schema(
+        {
+            "type": enum_string(["text"], "Content item type."),
+            "text": string("Text payload."),
+        },
+        ["type", "text"],
+    )
+
+
+def call_tool_result_schema() -> JsonDict:
+    return {
+        "type": "object",
+        "properties": {
+            "content": array(content_text_item_schema(), "Tool result content items."),
+            "structuredContent": {
+                "description": "Structured tool result payload.",
+            },
+            "isError": boolean("Whether the tool call failed at the MCP tool layer."),
+        },
+        "required": ["content"],
+        "additionalProperties": False,
+    }
+
+
+def parallel_output_schema() -> JsonDict:
+    success_schema = schema(
+        {
+            "tool": string("Normalized tool name."),
+            "ok": {"const": True},
+            "result": call_tool_result_schema(),
+        },
+        ["tool", "ok", "result"],
+    )
+    failure_schema = schema(
+        {
+            "tool": string("Normalized tool name."),
+            "ok": {"const": False},
+            "error": string("Per-tool failure message."),
+        },
+        ["tool", "ok", "error"],
+    )
+    return schema(
+        {
+            "results": {
+                "type": "array",
+                "description": "Per-tool execution results in the original order.",
+                "items": {"oneOf": [success_schema, failure_schema]},
+            }
+        },
+        ["results"],
+    )
+
+
 TOOL_DEFINITIONS: list[JsonDict] = [
     {
         "name": "exec_command",
@@ -225,6 +410,7 @@ TOOL_DEFINITIONS: list[JsonDict] = [
             },
             ["cmd"],
         ),
+        "outputSchema": shell_output_schema(),
     },
     {
         "name": "shell_command",
@@ -239,6 +425,7 @@ TOOL_DEFINITIONS: list[JsonDict] = [
             },
             ["command"],
         ),
+        "outputSchema": shell_output_schema(),
     },
     {
         "name": "write_stdin",
@@ -252,6 +439,7 @@ TOOL_DEFINITIONS: list[JsonDict] = [
             },
             ["session_id"],
         ),
+        "outputSchema": shell_output_schema(),
     },
     {
         "name": "apply_patch",
@@ -263,6 +451,7 @@ TOOL_DEFINITIONS: list[JsonDict] = [
             },
             ["patch"],
         ),
+        "outputSchema": patch_output_schema(),
     },
     {
         "name": "update_plan",
@@ -271,23 +460,19 @@ TOOL_DEFINITIONS: list[JsonDict] = [
             {
                 "explanation": string("Optional explanation for this plan update."),
                 "plan": array(
-                    schema(
-                        {
-                            "step": string("Task step text."),
-                            "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]},
-                        },
-                        ["step", "status"],
-                    ),
+                    plan_item_schema(),
                     "The list of steps.",
                 ),
             },
             ["plan"],
         ),
+        "outputSchema": update_plan_output_schema(),
     },
     {
         "name": "get_goal",
         "description": "Get the current goal for this thread, including status, budget, elapsed-time usage, and remaining token budget when known.",
         "inputSchema": schema({}),
+        "outputSchema": goal_output_schema(),
     },
     {
         "name": "create_goal",
@@ -299,6 +484,7 @@ TOOL_DEFINITIONS: list[JsonDict] = [
             },
             ["objective"],
         ),
+        "outputSchema": goal_output_schema(),
     },
     {
         "name": "update_goal",
@@ -307,6 +493,7 @@ TOOL_DEFINITIONS: list[JsonDict] = [
             {"status": {"type": "string", "enum": ["complete", "blocked"]}},
             ["status"],
         ),
+        "outputSchema": goal_output_schema(),
     },
     {
         "name": "tool_search",
@@ -318,6 +505,7 @@ TOOL_DEFINITIONS: list[JsonDict] = [
             },
             ["query"],
         ),
+        "outputSchema": tool_search_output_schema(),
     },
     {
         "name": "multi_tool_use.parallel",
@@ -337,5 +525,6 @@ TOOL_DEFINITIONS: list[JsonDict] = [
             },
             ["tool_uses"],
         ),
+        "outputSchema": parallel_output_schema(),
     },
 ]
