@@ -102,6 +102,45 @@ developer prompt for this server. The exact OpenAI Codex base prompt from the
 inspected source is also extracted to
 `prompts/openai_codex_base_instructions.default.md`.
 
+## Dev Container Feature
+
+This repo also publishes a devcontainer feature from `dev/codex-mcp-server`.
+The published feature reference is:
+
+```json
+{
+  "features": {
+    "ghcr.io/zjx20/codex-mcp-server/codex-mcp-server:1": {
+      "SOURCE_HTTP_PROXY": "",
+      "MCP_HTTP_PORT": "8765"
+    }
+  }
+}
+```
+
+The feature installs this project plus `rg`, and it already declares its own
+`postStartCommand`, so users do not need to write one in
+`devcontainer.json`. The internal command is `codex-mcp-server-dev-start`,
+which starts `codex-mcp-server` over HTTP in the current workspace directory.
+The startup path uses `setsid` so the background server survives the
+`postStartCommand` shell exiting.
+
+If you want to override the default startup behavior, use the repo script
+directly:
+
+```json
+{
+  "features": {
+    "ghcr.io/zjx20/codex-mcp-server/codex-mcp-server:1": {
+      "MCP_HTTP_PORT": "8765"
+    }
+  },
+  "postStartCommand": "bash -lc 'CODEX_MCP_HTTP_PORT=8765 ${containerWorkspaceFolder}/scripts/devcontainer-post-start.sh'"
+}
+```
+
+The script is [devcontainer-post-start.sh](/workspaces/chatgpt-web-codex/scripts/devcontainer-post-start.sh:1). It is idempotent, writes logs under `/tmp/codex-mcp-server`, and falls back to `nohup` only if `setsid` is unavailable.
+
 ## Source Evidence
 
 The OpenAI Codex repository was cloned to `third_party/codex` at commit
