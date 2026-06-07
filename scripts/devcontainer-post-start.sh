@@ -27,4 +27,12 @@ fi
 
 PID=$!
 echo "${PID}" > "${PID_FILE}"
-disown "${PID}"
+
+sleep 2
+
+if ! kill -0 "${PID}" >/dev/null 2>&1; then
+    echo "codex-mcp-server failed to start. Check ${LOG_FILE}" >&2
+    exit 1
+fi
+
+echo "codex-mcp-server started successfully with PID ${PID}"
